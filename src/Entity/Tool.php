@@ -26,11 +26,27 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ORM\Index(name: 'idx_tools_status', columns: ['status'])]
 #[ApiResource(
     operations: [
-        new GetCollection(),
-        new Get(),
-        new Post(),
-        new Patch(),
-        new Delete(),
+        new GetCollection(
+            // API Platform automatically handles filtering and pagination based on defined filters on RangeFilter and OrderFilter
+            // uriTemplate: '/tools{?name,vendor,status,ownerDepartment,category,monthlyCost[gte],monthlyCost[lte],activeUsersCount[gte],activeUsersCount[lte],order}',
+            normalizationContext: ['groups' => ['tool:read']]
+        ),
+        new Get(
+            // /tools/{id} is already the default behavior for Get operations
+            // uriTemplate: '/tools/{id}',
+            normalizationContext: ['groups' => ['tool:read']]
+        ),
+        new Post(
+            // uriTemplate: '/tools',
+            denormalizationContext: ['groups' => ['tool:write']],
+            controller: App\Controller\CreateToolAction::class
+        ),
+        new Put(
+            // uriTemplate: '/tools/{id}',
+            denormalizationContext: ['groups' => ['tool:write']],
+            controller: App\Controller\UpdateToolAction::class
+        ),
+        // new Delete(),
     ],
     normalizationContext: ['groups' => ['tool:read']],
     denormalizationContext: ['groups' => ['tool:write']],
