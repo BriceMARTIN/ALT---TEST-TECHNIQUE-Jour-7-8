@@ -3,12 +3,15 @@
 namespace App\Controller;
 
 use App\Entity\Tool;
-use App\Entity\UserToolAccess;
 use App\Repository\CategoryRepository;
 use DateTime;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 class CreateToolAction
 {
@@ -17,7 +20,8 @@ class CreateToolAction
       EntityManagerInterface $entityManager,
       CategoryRepository $categoryRepository,
       SerializerInterface $serializer,
-      ): Tool
+      ValidatorInterface $validator,
+      ): JsonResponse
     {
         $data = $request->toArray();
         $tool = new Tool();
@@ -35,13 +39,32 @@ class CreateToolAction
         $tool->setCreatedAt(new DateTime());
         $tool->setUpdatedAt(new DateTime());
 
+        $violations = $validator->validate($tool);
+        if (count($violations) > 0) {
+            $errors = [];
+            foreach ($violations as $violation) {
+                $errors[] = [
+                    'property' => $violation->getPropertyPath(),
+                    'message' => $violation->getMessage(),
+                ];
+            }
+            return new JsonResponse(['errors' => $errors], Response::HTTP_BAD_REQUEST);
+        }
+
+        $category = $categoryRepository->find($data['category'] ?? null);
+        if (!$category) {
+            throw new BadRequestHttpException('Category not found');
+        }
+
         $entityManager->persist($tool);
         $entityManager->flush();
 
-        $returnValue = $serializer->normalize($tool, null);
+        $returnValue = json_decode($serializer->serialize($tool, 'json'), true);
         // Replace category by its name alone
-        $returnValue['category'] = $tool->getCategory()->getName();
+        if ($tool->getCategory()) {
+            $returnValue['category'] = $tool->getCategory()->getName();
+        }
 
-        return json_encode($returnValue);
+        return new JsonResponse($returnValue);
     }
 }
