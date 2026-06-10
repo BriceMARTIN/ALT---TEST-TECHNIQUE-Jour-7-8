@@ -2,16 +2,11 @@
 
 namespace App\Controller;
 
-use App\Entity\Tool;
+use App\Service\ToolService;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Exception;
-use App\Repository\CategoryRepository;
-use DateTime;
-use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\Serializer\SerializerInterface;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -20,59 +15,28 @@ class CreateToolAction
 {
     public function __invoke(
         Request $request,
-        EntityManagerInterface $entityManager,
-        CategoryRepository $categoryRepository,
-        SerializerInterface $serializer,
-        ValidatorInterface $validator,
+        ToolService $toolService,
         LoggerInterface $logger,
     ): JsonResponse {
         try {
             $data = $request->toArray();
-            $tool = new Tool();
+            $tool = $toolService->createTool($data);
 
-            $tool->setName($data['name'] ?? '');
-            $tool->setDescription($data['description'] ?? '');
-            $tool->setVendor($data['vendor'] ?? '');
-            $tool->setWebsiteUrl($data['websiteUrl'] ?? '');
-            $tool->setCategory($categoryRepository->find($data['category'] ?? null));
-            $tool->setMonthlyCost($data['monthlyCost'] ?? '0');
-            $tool->setOwnerDepartment($data['ownerDepartment'] ?? '');
-
-            $tool->setStatus('active');
-            $tool->setActiveUsersCount(0);
-            $tool->setCreatedAt(new DateTime());
-            $tool->setUpdatedAt(new DateTime());
-
-            $violations = $validator->validate($tool);
-            if (count($violations) > 0) {
-                $errors = [];
-                foreach ($violations as $violation) {
-                    $errors[] = [
-                        'property' => $violation->getPropertyPath(),
-                        'message' => $violation->getMessage(),
-                    ];
-                }
+            $errors = $toolService->validateTool($tool);
+            if (!empty($errors)) {
                 return new JsonResponse(['errors' => $errors], Response::HTTP_BAD_REQUEST);
             }
 
-            $category = $categoryRepository->find($data['category'] ?? null);
-            if (!$category) {
-                throw new BadRequestHttpException('Category not found');
-            }
-
-            $entityManager->persist($tool);
-            $entityManager->flush();
-
-            $returnValue = json_decode($serializer->serialize($tool, 'json'), true);
-            // Replace category by its name alone
-            if ($tool->getCategory()) {
-                $returnValue['category'] = $tool->getCategory()->getName();
-            }
+            $toolService->persistTool($tool);
+            $returnValue = $toolService->serializeToolResponse($tool);
 
             return new JsonResponse($returnValue);
         } catch (UniqueConstraintViolationException $e) {
             $logger->error('Tool creation failed due to unique constraint violation', ['exception' => $e]);
             return new JsonResponse(['error' => 'Tool creation was failed due to a unique constraint violation'], 400);
+        } catch (BadRequestHttpException $e) {
+            $logger->error('Tool creation failed', ['exception' => $e]);
+            return new JsonResponse(['error' => 'Invalid request data'], 400);
         } catch (Exception $e) {
             $logger->error('Tool creation failed', ['exception' => $e]);
             return new JsonResponse(['error' => 'An error occurred while processing your request'], 500);
